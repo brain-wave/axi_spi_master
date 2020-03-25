@@ -28,6 +28,7 @@ module spi_master_controller
     input  logic                   [15:0] spi_dummy_rd,
     input  logic                   [15:0] spi_dummy_wr,
     input  logic                    [3:0] spi_csreg,
+    input  logic                    [1:0] spi_ctrl,
     input  logic                          spi_swrst, //FIXME Not used at all
     input  logic                          spi_rd,
     input  logic                          spi_wr,
@@ -55,9 +56,26 @@ module spi_master_controller
     input  logic                          spi_sdi3
 );
 
+  logic spi_cpha;
+  logic spi_cpol;
   logic spi_rise;
   logic spi_fall;
-
+  logic spi_clk_int;
+  logic [15:0] spi_dummy_rd_int;
+  logic [15:0] spi_dummy_wr_int;
+  logic tx_edge;
+  logic rx_edge;
+  
+  logic spi_sdo0_int;
+  logic spi_sdo1_int;
+  logic spi_sdo2_int;
+  logic spi_sdo3_int;
+  logic spi_sdo0_d1;
+  logic spi_sdo1_d1;
+  logic spi_sdo2_d1;
+  logic spi_sdo3_d1;
+  logic [1:0] spi_mode_d1;
+  
   logic spi_clock_en;
 
   logic spi_en_tx;
@@ -91,7 +109,7 @@ module spi_master_controller
 
   enum logic [2:0] {DATA_NULL,DATA_EMPTY,DATA_CMD,DATA_ADDR,DATA_FIFO} ctrl_data_mux;
 
-  enum logic [4:0] {IDLE,CMD,ADDR,MODE,DUMMY,DATA_TX,DATA_RX,WAIT_EDGE} state,state_next;
+  enum logic [4:0] {IDLE,CMD,ADDR,MODE,DUMMY,DATA_TX,DATA_RX,WAIT_RX_EDGE,WAIT_TX_EDGE} state,state_next;
 
   assign en_quad = spi_qrd | spi_qwr | en_quad_int;
 
@@ -102,7 +120,7 @@ module spi_master_controller
     .en            ( spi_clock_en      ),
     .clk_div       ( spi_clk_div       ),
     .clk_div_valid ( spi_clk_div_valid ),
-    .spi_clk       ( spi_clk           ),
+    .spi_clk       ( spi_clk_int       ),
     .spi_fall      ( spi_fall          ),
     .spi_rise      ( spi_rise          )
   );
@@ -112,12 +130,12 @@ module spi_master_controller
     .clk            ( clk              ),
     .rstn           ( rstn             ),
     .en             ( spi_en_tx        ),
-    .tx_edge        ( spi_fall         ),
+    .tx_edge        ( tx_edge          ),
     .tx_done        ( tx_done          ),
-    .sdo0           ( spi_sdo0         ),
-    .sdo1           ( spi_sdo1         ),
-    .sdo2           ( spi_sdo2         ),
-    .sdo3           ( spi_sdo3         ),
+    .sdo0           ( spi_sdo0_int     ),
+    .sdo1           ( spi_sdo1_int     ),
+    .sdo2           ( spi_sdo2_int     ),
+    .sdo3           ( spi_sdo3_int     ),
     .en_quad_in     ( en_quad          ),
     .counter_in     ( counter_tx       ),
     .counter_in_upd ( counter_tx_valid ),
@@ -132,7 +150,7 @@ module spi_master_controller
     .clk            ( clk                    ),
     .rstn           ( rstn                   ),
     .en             ( spi_en_rx              ),
-    .rx_edge        ( spi_rise               ),
+    .rx_edge        ( rx_edge                ),
     .rx_done        ( rx_done                ),
     .sdi0           ( spi_sdi0               ),
     .sdi1           ( spi_sdi1               ),
@@ -241,9 +259,9 @@ module spi_master_controller
             if (spi_rd || spi_qrd)
             begin
               s_spi_mode = (spi_qrd) ? `SPI_QUAD_RX : `SPI_STD;
-              if(spi_dummy_rd != 0)
+              if(spi_dummy_rd_int != 0)
               begin
-                counter_tx       = en_quad ? {spi_dummy_rd[13:0],2'b00} : spi_dummy_rd;
+                counter_tx       = en_quad ? {spi_dummy_rd_int[13:0],2'b00} : spi_dummy_rd_int;
                 counter_tx_valid = 1'b1;
                 spi_en_tx        = 1'b1;
                 ctrl_data_mux    = DATA_EMPTY;
@@ -260,9 +278,9 @@ module spi_master_controller
             else
             begin
               s_spi_mode = (spi_qwr) ? `SPI_QUAD_TX : `SPI_STD;
-              if(spi_dummy_wr != 0)
+              if(spi_dummy_wr_int != 0)
               begin
-                counter_tx       = en_quad ? {spi_dummy_wr[13:0],2'b00} : spi_dummy_wr;
+                counter_tx       = en_quad ? {spi_dummy_wr_int[13:0],2'b00} : spi_dummy_wr_int;
                 counter_tx_valid = 1'b1;
                 ctrl_data_mux    = DATA_EMPTY;
                 spi_en_tx        = 1'b1;
@@ -310,9 +328,9 @@ module spi_master_controller
             if (do_rx)
             begin
               s_spi_mode = (en_quad) ? `SPI_QUAD_RX : `SPI_STD;
-              if(spi_dummy_rd != 0)
+              if(spi_dummy_rd_int != 0)
               begin
-                counter_tx       = en_quad ? {spi_dummy_rd[13:0],2'b00} : spi_dummy_rd;
+                counter_tx       = en_quad ? {spi_dummy_rd_int[13:0],2'b00} : spi_dummy_rd_int;
                 counter_tx_valid = 1'b1;
                 spi_en_tx        = 1'b1;
                 ctrl_data_mux    = DATA_EMPTY;
@@ -329,9 +347,9 @@ module spi_master_controller
             else
             begin
               s_spi_mode = (en_quad) ? `SPI_QUAD_TX : `SPI_STD;
-              if(spi_dummy_wr != 0)
+              if(spi_dummy_wr_int != 0)
               begin
-                counter_tx       = en_quad ? {spi_dummy_wr[13:0],2'b00} : spi_dummy_wr;
+                counter_tx       = en_quad ? {spi_dummy_wr_int[13:0],2'b00} : spi_dummy_wr_int;
                 counter_tx_valid = 1'b1;
                 ctrl_data_mux    = DATA_EMPTY;
                 spi_en_tx        = 1'b1;
@@ -350,7 +368,11 @@ module spi_master_controller
           end
           else
           begin
-            state_next = IDLE;
+            if (spi_cpha) begin
+                state_next = WAIT_TX_EDGE;
+            end else begin
+                state_next = IDLE;
+            end
           end
         end
         else
@@ -375,9 +397,9 @@ module spi_master_controller
             if (do_rx)
             begin
               s_spi_mode = (en_quad) ? `SPI_QUAD_RX : `SPI_STD;
-              if(spi_dummy_rd != 0)
+              if(spi_dummy_rd_int != 0)
               begin
-                counter_tx       = en_quad ? {spi_dummy_rd[13:0],2'b00} : spi_dummy_rd;
+                counter_tx       = en_quad ? {spi_dummy_rd_int[13:0],2'b00} : spi_dummy_rd_int;
                 counter_tx_valid = 1'b1;
                 spi_en_tx        = 1'b1;
                 ctrl_data_mux    = DATA_EMPTY;
@@ -396,8 +418,8 @@ module spi_master_controller
               s_spi_mode = (en_quad) ? `SPI_QUAD_TX : `SPI_STD;
               spi_en_tx  = 1'b1;
 
-              if(spi_dummy_wr != 0) begin
-                counter_tx       = en_quad ? {spi_dummy_wr[13:0],2'b00} : spi_dummy_wr;
+              if(spi_dummy_wr_int != 0) begin
+                counter_tx       = en_quad ? {spi_dummy_wr_int[13:0],2'b00} : spi_dummy_wr;
                 counter_tx_valid = 1'b1;
                 ctrl_data_mux    = DATA_EMPTY;
                 state_next       = DUMMY;
@@ -412,7 +434,11 @@ module spi_master_controller
           end
           else
           begin
-            state_next = IDLE;
+            if (spi_cpha) begin
+                state_next = WAIT_TX_EDGE;
+            end else begin
+                state_next = IDLE;
+            end
           end
         end
       end
@@ -473,13 +499,31 @@ module spi_master_controller
         ctrl_data_valid  = 1'b1;
         spi_en_tx        = 1'b1;
         s_spi_mode       = (en_quad) ? `SPI_QUAD_TX : `SPI_STD;
-
-        if (tx_done) begin
+        
+        if (tx_done && spi_cpha) begin
+          state_next   = WAIT_TX_EDGE;
+          spi_clock_en = 1'b0;
+        end else if (tx_done) begin
           eot          = 1'b1;
           state_next   = IDLE;
           spi_clock_en = 1'b0;
         end else begin
           state_next = DATA_TX;
+        end
+      end
+      
+      WAIT_TX_EDGE:
+      begin
+        spi_status[5]    = 1'b1;
+        spi_cs           = 1'b0;
+        spi_clock_en     = 1'b1; // keep high for one more rising edge
+        s_spi_mode       = (en_quad) ? `SPI_QUAD_TX : `SPI_STD;
+      
+        if (spi_cpha && spi_rise) begin // NOTE: does (.. && ..) still work with CPOL=0?
+          eot          = 1'b1;
+          state_next   = IDLE;
+        end else begin
+          state_next   = WAIT_TX_EDGE;
         end
       end
 
@@ -491,24 +535,26 @@ module spi_master_controller
         s_spi_mode    = (en_quad) ? `SPI_QUAD_RX : `SPI_STD;
 
         if (rx_done) begin
-          state_next = WAIT_EDGE;
+          state_next = WAIT_RX_EDGE;
         end else begin
           spi_en_rx  = 1'b1;
           state_next = DATA_RX;
         end
       end
-      WAIT_EDGE:
+      
+      WAIT_RX_EDGE:
       begin
+        spi_en_rx     = 1'b0;
         spi_status[6] = 1'b1;
         spi_cs        = 1'b0;
-        spi_clock_en  = 1'b0;
+        spi_clock_en  = spi_cpha; // keep high for one more rising edge
         s_spi_mode    = (en_quad) ? `SPI_QUAD_RX : `SPI_STD;
-
-        if (spi_fall) begin
+        
+        if (spi_fall || (spi_cpha && spi_rise)) begin // NOTE: does (.. && ..) still work with CPOL=0?
           eot        = 1'b1;
           state_next = IDLE;
         end else begin
-          state_next = WAIT_EDGE;
+          state_next = WAIT_RX_EDGE;
         end
       end
     endcase
@@ -528,7 +574,10 @@ module spi_master_controller
     else
     begin
       state <= state_next;
-      spi_mode <= s_spi_mode;
+      if (spi_cpha)
+        spi_mode <= spi_mode_d1;
+      else
+        spi_mode <= s_spi_mode;
       if (spi_qrd || spi_qwr)
         en_quad_int <= 1'b1;
       else if (state_next == IDLE)
@@ -551,10 +600,46 @@ module spi_master_controller
       end
     end
   end
-
+  
   assign spi_csn0 = ~spi_csreg[0] | spi_cs;
   assign spi_csn1 = ~spi_csreg[1] | spi_cs;
   assign spi_csn2 = ~spi_csreg[2] | spi_cs;
   assign spi_csn3 = ~spi_csreg[3] | spi_cs;
-
+  
+  // Output delay for phase shift (CPHA=1)
+  always_ff @(posedge spi_rise, negedge rstn)
+  begin
+    if (rstn == 1'b0)
+    begin
+        spi_sdo0_d1 <= 1'b0;
+        spi_sdo1_d1 <= 1'b0;
+        spi_sdo2_d1 <= 1'b0;
+        spi_sdo3_d1 <= 1'b0;
+        spi_mode_d1 <= `SPI_QUAD_RX; // default
+    end
+    else if(spi_cpha)
+    begin
+        spi_sdo0_d1 <= spi_sdo0_int;
+        spi_sdo1_d1 <= spi_sdo1_int;
+        spi_sdo2_d1 <= spi_sdo2_int;
+        spi_sdo3_d1 <= spi_sdo3_int;
+        spi_mode_d1 <= s_spi_mode;
+    end
+  end
+  
+  // SPI polarity selection
+  assign spi_cpol = spi_ctrl[1];
+  assign spi_clk = spi_cpol ? ~spi_clk_int : spi_clk_int;
+  
+  // SPI phase shift selection
+  assign spi_cpha = spi_ctrl[0];
+  assign tx_edge = spi_cpha ? spi_rise : spi_fall; // CPHA=0 means sampling on the first clock edge, while CPHA=1 means sampling on the second clock edge
+  assign rx_edge = spi_cpha ? spi_fall : spi_rise;
+  assign spi_sdo0 = spi_cpha ? spi_sdo0_d1 : spi_sdo0_int;
+  assign spi_sdo1 = spi_cpha ? spi_sdo1_d1 : spi_sdo1_int;
+  assign spi_sdo2 = spi_cpha ? spi_sdo2_d1 : spi_sdo2_int;
+  assign spi_sdo3 = spi_cpha ? spi_sdo3_d1 : spi_sdo3_int;
+  assign spi_dummy_rd_int = spi_dummy_rd + spi_cpha;
+  assign spi_dummy_wr_int = spi_dummy_wr; // + spi_cpha;
+  
 endmodule
