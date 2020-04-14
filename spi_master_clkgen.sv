@@ -17,10 +17,10 @@ module spi_master_clkgen
     input  logic                        clk_div_valid,
     output logic                        spi_clk,
     output logic                        spi_fall,
-    output logic                        spi_rise
+    output logic                        spi_rise,
+    output logic          [7:0]         counter_trgt
 );
 
-    logic [7:0] counter_trgt;
     logic [7:0] counter_trgt_next;
     logic [7:0] counter;
     logic [7:0] counter_next;
@@ -75,7 +75,5 @@ module spi_master_clkgen
                 running <= 1'b0;
         end
     end
-
-
 
 endmodule
